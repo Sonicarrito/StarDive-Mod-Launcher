@@ -8,6 +8,9 @@
 #include <vector>
 #include <algorithm>
 #include "MinHook.h"
+#include "GameCompatibility.h"
+#include "Bk2Files.h"
+static Compat::Layout layout;
 
 static HMODULE plugin;
 static volatile LONG started=0;
@@ -46,10 +49,7 @@ static bool Read(const void* address,void* output,SIZE_T size) {
 }
 
 static const char* StateName(unsigned char state) {
-    const char* names[]={"NONE","CONFIG_REQUEST","MANIFEST_LIST_REQUEST",
-        "CONTENT_REQUEST","CONTENT_INSTALL_READY","CONTENT_INSTALL",
-        "CONTENT_MOUNT","SUCCESSED","FAILED"};
-    return state<9?names[state]:"UNKNOWN";
+    return layout.stateNames[state]?layout.stateNames[state]:"UNKNOWN";
 }
 
 static void RecordPatchState(void* manager) {
@@ -78,9 +78,9 @@ static void UpdateCompletion(void* manager,unsigned char state) {
     for(auto& candidate:managers)if(candidate.manager==manager){slot=&candidate;break;}
     if(!slot)for(auto& candidate:managers)if(!candidate.manager){candidate.manager=manager;slot=&candidate;break;}
     if(slot) {
-        if(state<6 || state==8)slot->sawMount=false;
-        if(state==6)slot->sawMount=true;
-        if(state==7 && slot->sawMount) { request=true;slot->sawMount=false; }
+        if(state==layout.mountState)slot->sawMount=true;
+        else if(state==layout.successState && slot->sawMount) { request=true;slot->sawMount=false; }
+        else slot->sawMount=false;
     }
     ReleaseSRWLockExclusive(&stateLock);
     if(request && !InterlockedCompareExchange(&automaticRequested,1,0))
@@ -97,61 +97,58 @@ static void __fastcall ObserveStateSetter(void* manager,const void* info) {
         UpdateCompletion(manager,actual);
 }
 
-static void InstallObserver(unsigned char* base) {
-    const unsigned char tickPrefix[]={0x40,0x53,0x55,0x41,0x57,0x48,0x83,0xec,
-        0x30,0x0f,0xb6,0x91,0x90,0x03,0x00,0x00};
-    unsigned char code[sizeof(tickPrefix)]={};
-    if(!Read(base+0x72b14c0,code,sizeof(code)) || memcmp(code,tickPrefix,sizeof(code))) {
-        Log("OBSERVER_REJECTED: status-tick signature differs. F8 remains available.\r\n");return;
-    }
-    const unsigned char setterPrefix[]={0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x6c,0x24,0x18,
-        0x48,0x89,0x74,0x24,0x20,0x57,0x48,0x83,0xec,0x20};
-    unsigned char setterCode[sizeof(setterPrefix)]={};
-    if(!Read(base+0x72b6220,setterCode,sizeof(setterCode)) || memcmp(setterCode,setterPrefix,sizeof(setterCode))) {
-        Log("OBSERVER_REJECTED: state-setter signature differs. F8 remains available.\r\n");return;
-    }
-    MH_STATUS status=MH_Initialize();
+static void InstallObserver(unsigned char*) {
+    if(!layout.Automatic()){Log("OBSERVER_UNAVAILABLE: signatures not verified. Use F8 after the content check.\r\n");return;}
+    MH_STATUS status=MH_Initialize();bool tickCreated=false,setterCreated=false;
     if(status==MH_OK || status==MH_ERROR_ALREADY_INITIALIZED) {
-        status=MH_CreateHook(base+0x72b14c0,reinterpret_cast<void*>(&ObservePatchTick),
-                            reinterpret_cast<void**>(&originalPatchTick));
-        if(status==MH_OK)status=MH_CreateHook(base+0x72b6220,reinterpret_cast<void*>(&ObserveStateSetter),
-                                             reinterpret_cast<void**>(&originalStateSetter));
-        if(status==MH_OK)status=MH_QueueEnableHook(base+0x72b14c0);
-        if(status==MH_OK)status=MH_QueueEnableHook(base+0x72b6220);
+        status=MH_CreateHook(layout.tick,reinterpret_cast<void*>(&ObservePatchTick),reinterpret_cast<void**>(&originalPatchTick));
+        tickCreated=status==MH_OK;
+        if(status==MH_OK){status=MH_CreateHook(layout.setter,reinterpret_cast<void*>(&ObserveStateSetter),reinterpret_cast<void**>(&originalStateSetter));setterCreated=status==MH_OK;}
+        if(status==MH_OK)status=MH_QueueEnableHook(layout.tick);
+        if(status==MH_OK)status=MH_QueueEnableHook(layout.setter);
         if(status==MH_OK)status=MH_ApplyQueued();
     }
     if(status!=MH_OK) {
+        if(tickCreated){MH_DisableHook(layout.tick);MH_RemoveHook(layout.tick);}
+        if(setterCreated){MH_DisableHook(layout.setter);MH_RemoveHook(layout.setter);}
+        originalPatchTick=nullptr;originalStateSetter=nullptr;
         char line[160];sprintf_s(line,"OBSERVER_ERROR: %s; F8 remains available.\r\n",MH_StatusToString(status));Log(line);
-    } else Log("OBSERVER_READY: automatic loading armed for verified content-mount completion; F8 fallback available.\r\n");
+    } else Log("OBSERVER_READY: verified content-completion functions; F8 fallback available.\r\n");
 }
 
 static bool VerifyBuild(unsigned char* base) {
-    __try {
-        auto dos=reinterpret_cast<IMAGE_DOS_HEADER*>(base);
-        if(dos->e_magic!=IMAGE_DOS_SIGNATURE) return false;
-        auto nt=reinterpret_cast<IMAGE_NT_HEADERS64*>(base+dos->e_lfanew);
-        if(nt->Signature!=IMAGE_NT_SIGNATURE || nt->FileHeader.Machine!=IMAGE_FILE_MACHINE_AMD64 ||
-           nt->FileHeader.TimeDateStamp!=2634424296u || nt->OptionalHeader.SizeOfImage!=235642880u)
-            return false;
-        const unsigned char prefix[]={0x40,0x55,0x53,0x56,0x57,0x41,0x54,0x41,
-            0x55,0x41,0x56,0x41,0x57,0x48,0x8d,0xac,0x24,0x58,0xfc,0xff,
-            0xff,0x48,0x81,0xec,0xa8,0x04,0x00,0x00,0x48,0x8b,0x05,0x9d};
-        const unsigned char nameAccessor[]={0x48,0x8d,0x05,0x69,0xdf,0x3f,0x07,0xc3};
-        return !memcmp(base+0x36fce40,prefix,sizeof(prefix)) &&
-               !memcmp(base+0x36ed0f0,nameAccessor,sizeof(nameAccessor));
-    } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+    Compat::Image image;char reason[512]={};
+    if(!Compat::OpenImage(image,base)){Log("COMPATIBILITY_REJECTED: invalid or unsupported executable image.\r\n");return false;}
+    bool ok=Compat::Core(image,layout,reason,sizeof(reason));
+    Log(ok?"COMPATIBILITY_VERIFIED: ":"COMPATIBILITY_REJECTED: ");Log(reason);Log("\r\n");
+    if(ok){char message[240];sprintf_s(message,"RESOLVED_RVAS: mount=0x%llx name=0x%llx platform=0x%llx vtable=0x%llx\r\n",
+        (unsigned long long)(layout.mount-base),(unsigned long long)(layout.name-base),(unsigned long long)(layout.platform-base),(unsigned long long)(layout.vtable-base));Log(message);}
+    return ok;
 }
 
-static void* FindPak(unsigned char* base) {
+// Offline inspection only: map the game image without running its entry point.
+extern "C" __declspec(dllexport) DWORD WINAPI ProbeGameCompatibility(const wchar_t* file,char* message,DWORD capacity) {
+    if(!file||!message||capacity<2)return 0;
+    HMODULE mapped=LoadLibraryExW(file,nullptr,DONT_RESOLVE_DLL_REFERENCES);
+    if(!mapped){strcpy_s(message,capacity,"The game executable could not be mapped for inspection.");return 0;}
+    Compat::Image image;Compat::Layout found;DWORD flags=0;
+    if(Compat::OpenImage(image,mapped)) {
+        if(Compat::Core(image,found,message,capacity)){flags|=1;if(found.Automatic())flags|=2;}
+        if(Compat::Camera(image))flags|=4;
+    }else strcpy_s(message,capacity,"The game executable is not a supported 64-bit image.");
+    FreeLibrary(mapped);return flags;
+}
+
+static void* FindPak(unsigned char*) {
     void* object=nullptr;
-    if(!Read(base+0xd383a68,&object,sizeof(object)))return nullptr;
+    if(!Read(layout.platform,&object,sizeof(object)))return nullptr;
     for(unsigned depth=0;object && depth<16;++depth) {
         uintptr_t vtable=0;
         if(!Read(object,&vtable,sizeof(vtable))) return nullptr;
-        if(vtable==reinterpret_cast<uintptr_t>(base+0xada42c0)) {
+        if(vtable==reinterpret_cast<uintptr_t>(layout.vtable)) {
             uintptr_t nameFn=0;
             if(!Read(reinterpret_cast<void*>(vtable+0x70),&nameFn,sizeof(nameFn)) ||
-               nameFn!=reinterpret_cast<uintptr_t>(base+0x36ed0f0)) return nullptr;
+               nameFn!=reinterpret_cast<uintptr_t>(layout.name)) return nullptr;
             return object;
         }
         // Traverse only a positively identified, trivial GetLowerLevel getter.
@@ -166,11 +163,11 @@ static void* FindPak(unsigned char* base) {
     return nullptr;
 }
 
-static bool MountOnce(unsigned char* base,void* pak,const wchar_t* path,DWORD* exception) {
+static bool MountOnce(unsigned char*,void* pak,const wchar_t* path,DWORD* exception) {
     // Verified against the game's mount-delegate caller and UE 5.5 source.
     using Mount=bool(__fastcall*)(void*,const wchar_t*,uint32_t,const wchar_t*,bool,void*);
     __try {
-        return reinterpret_cast<Mount>(base+0x36fce40)(pak,path,10000,nullptr,true,nullptr);
+        return reinterpret_cast<Mount>(layout.mount)(pak,path,10000,nullptr,true,nullptr);
     } __except((*exception=GetExceptionCode()),EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -195,11 +192,11 @@ static DWORD WINAPI Worker(void*) {
     const wchar_t* exeName=wcsrchr(exe,L'\\');exeName=exeName?exeName+1:exe;
     if(_wcsicmp(exeName,L"BigCat-Win64-Shipping.exe")) return 0;
     diagnosticStart=GetTickCount64();
-    Log("\r\nPLUGIN_STARTED: StardiveMount 1.8.3 compatibility update, launcher session required, recursive mods x64\r\n");
+    Log("\r\nPLUGIN_STARTED: StardiveMount 1.10.0 pattern compatibility, launcher session required, recursive mods x64\r\n");
     if(!LauncherSessionActive()){Log("LAUNCHER_SESSION_REQUIRED: start through Star Dive Mod Launcher; no hooks or mounts enabled.\r\n");return 0;}
     unsigned char* base=reinterpret_cast<unsigned char*>(GetModuleHandleW(nullptr));
-    if(!VerifyBuild(base)) { Log("BUILD_REJECTED: executable guards do not match; no engine calls made.\r\n");return 0; }
-    Log("BUILD_VERIFIED: target executable and mount function signatures match.\r\n");
+    if(!VerifyBuild(base)) { Log("BUILD_REJECTED: required mod-loading functions could not be verified; no engine calls made.\r\n");return 0; }
+    Log("BUILD_VERIFIED: function patterns and related game references match.\r\n");
     InstallObserver(base);
     Log("WAITING_FOR_COMPLETION: automatic trigger armed; press F8 only as a fallback.\r\n");
     bool released=false;
@@ -211,12 +208,13 @@ static DWORD WINAPI Worker(void*) {
         Sleep(10);
     }
     if(!LauncherSessionActive()){Log("LAUNCHER_SESSION_ENDED: no mod mounts attempted.\r\n");return 0;}
+    Bk2::Apply(std::wstring(directory));
     void* pak=FindPak(base);
     if(!pak) { Log("PAK_OBJECT_NOT_FOUND: platform-file chain could not be verified; no mount attempted.\r\n");return 0; }
     Log("PAK_OBJECT_VERIFIED: exact PakFile vtable and name accessor match.\r\n");
     std::vector<std::wstring> names;
     CollectMods(std::wstring(directory)+L"Mods\\",L"",names);
-    if(names.empty()) { Log("MODS_NOT_FOUND: no *_P.pak files in Mods or its subfolders.\r\n");return 0; }
+    if(names.empty()) { Log("PAK_MODS_NOT_FOUND: no *_P.pak files; eligible BK2 replacements were handled separately.\r\n");return 0; }
     std::sort(names.begin(),names.end(),[](const std::wstring& a,const std::wstring& b){return _wcsicmp(a.c_str(),b.c_str())<0;});
     unsigned mounted=0,skipped=0,failed=0;
     for(const auto& name:names) {
@@ -271,6 +269,7 @@ static __declspec(noinline) bool __fastcall TestTick(void* object) {
     return *state<7;
 }
 int wmain() {
+    layout.mountState=6;layout.successState=7;
     plugin=GetModuleHandleW(nullptr);
     DWORD n=GetModuleFileNameW(plugin,directory,32768);
     while(n && directory[n-1]!=L'\\')--n;

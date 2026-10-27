@@ -82,7 +82,7 @@ class LauncherMenuColors : ProfessionalColorTable {
     public override Color MenuBorder {get{return Color.FromArgb(59,61,72);}}
 }
 class Launcher : Form {
-    const string AppVersion = "1.8.3";
+    const string AppVersion = "1.10.0";
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
     static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
     static readonly string SettingsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MongilModLauncher");
@@ -146,10 +146,30 @@ class Launcher : Form {
     static bool RecognizedModule(string name,byte[] bytes) {
         string digest=Digest(bytes);
         if(digest==Digest(Payload(name)))return true;
-        if(name=="version.dll")return new[]{"b2190b2b3666027f00734876aba47e970d1d60fe63e8af17eaaedd739a4fec01","2f5460a75b673846a930529de4324dae0130591960f8ef839abdf2e73c6486f2","87445b6028e3ce4560f0002d52345852a56acca30169e19549dfb727931da868","559094e78013e6dda9e26cc8ee64a4166bf2fe8c41e2bb09bd22820428d61954","cf2ebed93442535d32679655ec16d6c5a29d9f86fafb59eaf07de4d719ae1302","5240b0ff2a96cec2680d35df88796279e6f3ed47f0e395252e9c3e4288e6c132"}.Contains(digest);
-        if(name=="StardiveMount.asi")return new[]{"0dc0425deb124080ea371dc14bae7bb9d0da7d830f9d6a700176488d4a909b7a","2522cffba1afd791db4cc3479fcc630d781d6dc324d5e700046d2405a41bfa9d","90c2e279106d05c9af4de4f5eab952cb552a605a4fcddd5d9fdd1228cf71b94f","5ceff22c62ef0d60671a58490b1c1ba14aa923dec5d2a5c5cf9de992cdfdfc97","32390d0a4dd0429cebd2d08580f2a5d7138ea2a0586946b286221f5e8775fed8"}.Contains(digest);
-        if(name=="MSDCamera.asi")return new[]{"47f2178c0fe6a531b60b0313cf34a936641139d563cec3238c7a127c059e616e","4e43735b4211828a56bb4c30978df8a66dab28eecfd2357bdc09a4ed4d9db019"}.Contains(digest);
+        if(name=="version.dll")return new[]{"e74f7d190af7796ddfc3768578ae33262908c02c252582e37e742800865dfdcb","b2190b2b3666027f00734876aba47e970d1d60fe63e8af17eaaedd739a4fec01","2f5460a75b673846a930529de4324dae0130591960f8ef839abdf2e73c6486f2","87445b6028e3ce4560f0002d52345852a56acca30169e19549dfb727931da868","559094e78013e6dda9e26cc8ee64a4166bf2fe8c41e2bb09bd22820428d61954","cf2ebed93442535d32679655ec16d6c5a29d9f86fafb59eaf07de4d719ae1302","5240b0ff2a96cec2680d35df88796279e6f3ed47f0e395252e9c3e4288e6c132"}.Contains(digest);
+        if(name=="StardiveMount.asi")return new[]{"e88a63bf09929407b6078063ca3314a710ede7078b42d532611298a893ddb3ab","0dc0425deb124080ea371dc14bae7bb9d0da7d830f9d6a700176488d4a909b7a","2522cffba1afd791db4cc3479fcc630d781d6dc324d5e700046d2405a41bfa9d","90c2e279106d05c9af4de4f5eab952cb552a605a4fcddd5d9fdd1228cf71b94f","5ceff22c62ef0d60671a58490b1c1ba14aa923dec5d2a5c5cf9de992cdfdfc97","32390d0a4dd0429cebd2d08580f2a5d7138ea2a0586946b286221f5e8775fed8"}.Contains(digest);
+        if(name=="MSDCamera.asi")return new[]{"c81cad5e6d68b5c5ed0064a6d5c6033242b82adc67dbefda518f4244e95af553","47f2178c0fe6a531b60b0313cf34a936641139d563cec3238c7a127c059e616e","4e43735b4211828a56bb4c30978df8a66dab28eecfd2357bdc09a4ed4d9db019"}.Contains(digest);
         return false;
+    }
+    [UnmanagedFunctionPointer(CallingConvention.Winapi,CharSet=CharSet.Ansi)]
+    delegate uint CompatibilityProbe([MarshalAs(UnmanagedType.LPWStr)] string file,[Out] System.Text.StringBuilder message,uint capacity);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr LoadLibraryEx(string file,IntPtr reserved,uint flags);
+    [DllImport("kernel32.dll",CharSet=CharSet.Ansi,ExactSpelling=true)] static extern IntPtr GetProcAddress(IntPtr module,string name);
+    [DllImport("kernel32.dll")] static extern bool FreeLibrary(IntPtr module);
+    static uint CheckGameCompatibility(string exe) {
+        byte[] bytes=Payload("StardiveMount.asi");string cache=Path.Combine(SettingsDir,"compatibility");Directory.CreateDirectory(cache);
+        string probeFile=Path.Combine(cache,Digest(bytes)+".asi");
+        if(!File.Exists(probeFile)||Digest(File.ReadAllBytes(probeFile))!=Digest(bytes))File.WriteAllBytes(probeFile,bytes);
+        IntPtr module=LoadLibraryEx(probeFile,IntPtr.Zero,0x100|0x800);
+        if(module==IntPtr.Zero)throw new IOException("Could not inspect game compatibility (Windows error "+Marshal.GetLastWin32Error()+").");
+        try {
+            IntPtr address=GetProcAddress(module,"ProbeGameCompatibility");if(address==IntPtr.Zero)throw new IOException("The bundled compatibility inspector is unavailable.");
+            var probe=(CompatibilityProbe)Marshal.GetDelegateForFunctionPointer(address,typeof(CompatibilityProbe));
+            var message=new System.Text.StringBuilder(1024);uint flags=probe(exe,message,(uint)message.Capacity);
+            File.WriteAllText(Path.Combine(SettingsDir,"compatibility.log"),"Capabilities="+flags+Environment.NewLine+message+Environment.NewLine);
+            if((flags&1)==0)throw new IOException("This game update could not be verified for mod loading. "+message);
+            return flags;
+        }finally{FreeLibrary(module);}
     }
     void Save() { settings.gameRoot=game.Text.Trim(); settings.officialLauncher=official.Text.Trim(); Directory.CreateDirectory(SettingsDir); File.WriteAllText(Path.Combine(SettingsDir,"settings.json"),Json.Serialize(settings)); }
     Label Caption(string text, int y) { var label=new Label {Text=text,Left=28,Top=y,Width=640,Height=26,ForeColor=Color.FromArgb(210,216,232)}; Controls.Add(label); return label; }
@@ -314,10 +334,16 @@ class Launcher : Form {
         using(var dialog=new Form {Text="Mod Manager",ClientSize=new Size(710,440),StartPosition=FormStartPosition.CenterParent,BackColor=Color.FromArgb(22,25,36),ForeColor=Color.White,Font=Font}) {
             var list=new ListView {View=View.Details,FullRowSelect=true,MultiSelect=false,Left=20,Top=48,Width=670,Height=307,Anchor=AnchorStyles.Top|AnchorStyles.Bottom|AnchorStyles.Left|AnchorStyles.Right,BackColor=Color.FromArgb(28,32,44),ForeColor=Color.White};
             list.Columns.Add("Mod",370);list.Columns.Add("Status",150);list.Columns.Add("Files",125);dialog.Controls.Add(list);
-            dialog.Controls.Add(new Label {Text="Select a mod to enable or disable it. Restart the game to apply changes.",Left=20,Top=17,Width=680});
+            dialog.Controls.Add(new Label {Text="Select a mod to enable or disable it. BK2 replacements persist until game repair.",Left=20,Top=17,Width=680});
             Action refresh=delegate {
                 list.Items.Clear();
                 foreach(string file in ModFiles(folder).OrderBy(p=>p,StringComparer.OrdinalIgnoreCase)) {
+                    if(file.EndsWith(".bk2",StringComparison.OrdinalIgnoreCase)||file.EndsWith(".bk2.disabled",StringComparison.OrdinalIgnoreCase)) {
+                        bool off=file.EndsWith(".disabled",StringComparison.OrdinalIgnoreCase);
+                        string label=file.Substring(folder.TrimEnd('\\').Length+1);
+                        var movieItem=new ListViewItem(off?label.Substring(0,label.Length-9):label);
+                        movieItem.SubItems.Add(off?"Disabled":"Enabled");movieItem.SubItems.Add("BK2 video");movieItem.Tag=file;list.Items.Add(movieItem);continue;
+                    }
                     bool disabled=file.EndsWith("_P.pak.disabled",StringComparison.OrdinalIgnoreCase);bool enabled=file.EndsWith("_P.pak",StringComparison.OrdinalIgnoreCase);if(!disabled&&!enabled)continue;
                     string suffix=disabled?".disabled":"";string stem=file.Substring(0,file.Length-(disabled?13:4));
                     bool complete=File.Exists(stem+".utoc"+suffix)&&File.Exists(stem+".ucas"+suffix);
@@ -327,6 +353,12 @@ class Launcher : Form {
             Action toggle=delegate {
                 if(Running())throw new IOException("Close STAR DIVE before changing enabled mods.");
                 if(list.SelectedItems.Count==0)return;string file=(string)list.SelectedItems[0].Tag;
+                if(file.EndsWith(".bk2",StringComparison.OrdinalIgnoreCase)||file.EndsWith(".bk2.disabled",StringComparison.OrdinalIgnoreCase)) {
+                    bool off=file.EndsWith(".disabled",StringComparison.OrdinalIgnoreCase);
+                    string destination=off?file.Substring(0,file.Length-9):file+".disabled";
+                    if(File.Exists(destination))throw new IOException("The destination already exists. No changes made.");
+                    File.Move(file,destination);refresh();return;
+                }
                 bool disabled=file.EndsWith(".disabled",StringComparison.OrdinalIgnoreCase);string suffix=disabled?".disabled":"";
                 string stem=file.Substring(0,file.Length-(disabled?13:4));var moves=new System.Collections.Generic.List<string[]>();
                 foreach(string extension in new[]{".pak",".utoc",".ucas"}) {
@@ -380,7 +412,8 @@ class Launcher : Form {
         Save(); if(Running()) throw new IOException("Close STAR DIVE before installing the loader.");
         string target=Path.Combine(settings.gameRoot,"BigCat","Binaries","Win64");
         string exe=Path.Combine(target,"BigCat-Win64-Shipping.exe");if(!File.Exists(exe))throw new IOException("Select the STAR DIVE folder that contains BigCat.");
-        if(Digest(File.ReadAllBytes(exe))!="dc52b31fe35f90439c5b1029b689d3cb4f090f3f941eeda62034c2db8bb5f253") throw new IOException("This game build differs from the tested build. A compatible loader update is required.");
+        status.Text="Checking game compatibility...";status.Refresh();
+        CheckGameCompatibility(exe);
         var names=new[]{"version.dll","StardiveMount.asi","MSDCamera.asi"};
         // Validate all destinations before writing. Preserve unknown modules.
         foreach(string name in names) {

@@ -1,6 +1,6 @@
 # Star Dive Mod Launcher
 
-Source snapshot for version **1.8.3**, a compatibility update based on 1.8.2. 
+Version **1.10.0** adds update-tolerant function discovery and BK2 movie replacements.
 
 The launcher installs the native loader, starts the official Netmarble launcher, and manages the launcher session. It loads compatible `_P.pak` mods and their associated `.utoc` and `.ucas` files from `BigCat/Binaries/Win64/Mods`, including subfolders.
 
@@ -22,17 +22,30 @@ The native loader requires an active mod-launcher session.
 
 The camera extension supports expanded pitch and closer zoom. Set `Enabled=0` in `MSDCamera.ini` to disable it.
 
-## Supported game build
+## Game update compatibility
 
-This snapshot targets the installed executable tested on October 26, 2026:
+The launcher discovers the required game functions from instruction patterns and checks their related code and data. It no longer rejects a build simply because its executable hash or function addresses changed. Both the previous and October 26, 2026 game executables passed compatibility checks.
 
-```text
-SHA-256: dc52b31fe35f90439c5b1029b689d3cb4f090f3f941eeda62034c2db8bb5f253
-```
+This improves tolerance of routine rebuilds, but cannot guarantee support for every future update. Changed function behavior, layouts or movie locations may still require a loader update. Ambiguous or missing essential matches stop mod loading. If only automatic content-completion detection is unavailable, F8 remains available after the game's content check. Camera code and its reflected field layouts are verified separately; an incompatible camera feature does not disable PAK mods.
 
-Game updates can relocate internal functions. The launcher checks the executable hash; the native loader checks image metadata and function signatures; the camera checks the executable hash and input-function signature. Do not remove those guards to make an unsupported build run. Locate and verify its functions and object layouts before updating references.
+The native mod loader waits for the game's content-mount completion before loading mods. Logs are written beside the installed modules: `stardive-loader-probe.log`, `stardive-mount.log`, `MSDCamera.log`, and `stardive-bk2.log`. The launcher's compatibility diagnostics are stored under `%LOCALAPPDATA%/MongilModLauncher/compatibility.log`. A successful mount log still needs a visual in-game check to confirm that the mod's assets display correctly.
 
-The native mod loader waits for the game's content-mount completion before mounting mods. F8 is available as a fallback. Logs are written beside the installed modules: `stardive-loader-probe.log`, `stardive-mount.log`, and `MSDCamera.log`. A successful mount log still needs a visual in-game check to confirm that the mod's assets display correctly.
+## BK2 movie replacements
+
+Place replacement `.bk2` files anywhere under `BigCat/Binaries/Win64/Mods`. Each filename must exactly match an existing movie in `BigCat/Saved/PersistentDownloadDir/M2/moviechunk800`. The Mod Manager can enable or disable these files. Duplicate filenames, disabled files, invalid Bink2 headers, missing targets and links are skipped.
+
+Enabled replacements are copied into the downloaded movie cache after the content check. **These changes persist after the game exits. Disabling or deleting the mod prevents future copies but does not restore the original movie.** Use the official launcher's game repair to restore original files. This version includes no restore helper or automatic backups.
+
+## Validation
+
+Run `tests/build-tests.cmd` after building. It produces test executables under `build/tests`:
+
+- `compatibility.exe <game-executable> [older-game-executable]` maps the supplied files without running game code, verifies discovery and hook creation, and checks rejection of missing, duplicate and changed signatures/layouts. Changes are confined to the test process.
+- `observers.exe` checks automatic loading triggers and preservation of the game's original return behavior.
+- `bk2.exe <new-disposable-directory>` exercises movie replacement, persistence, skip rules and locked-file handling using synthetic files.
+- `LauncherTests.exe <built-launcher-exe> <new-disposable-directory> <game-executable> [older-game-executable]` checks the embedded native probe, installation and settings inside a disposable fixture.
+
+The tests need local game executables supplied by the tester. No game binaries are included. Live gameplay and real movie playback must be checked separately before calling a candidate release fully verified.
 
 ## How it works and antivirus reports
 

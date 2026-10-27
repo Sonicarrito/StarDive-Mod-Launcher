@@ -38,7 +38,7 @@ $arguments += '/reference:System.Xaml.dll'
 foreach ($name in @('version.dll','StardiveMount.asi','MSDCamera.asi')) { $arguments += "/resource:$native\$name,$name" }
 $arguments += "/resource:$root\assets\background-edited.png,background.jpg"
 $arguments += "/resource:$root\assets\gamebanana.png,gamebanana.png"
-foreach ($name in @('Launcher.cs','LauncherSession.cs','InstallDetection.cs')) { $arguments += "$src\$name" }
+foreach ($name in @('Launcher.cs','LauncherSession.cs','InstallDetection.cs','AssemblyInfo.cs')) { $arguments += "$src\$name" }
 Run $csc $arguments
 foreach ($variant in @('launcher')) {
     $out = Join-Path $dist $variant
