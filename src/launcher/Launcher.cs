@@ -146,9 +146,9 @@ class Launcher : Form {
     static bool RecognizedModule(string name,byte[] bytes) {
         string digest=Digest(bytes);
         if(digest==Digest(Payload(name)))return true;
-        if(name=="version.dll")return new[]{"2f5460a75b673846a930529de4324dae0130591960f8ef839abdf2e73c6486f2","87445b6028e3ce4560f0002d52345852a56acca30169e19549dfb727931da868","559094e78013e6dda9e26cc8ee64a4166bf2fe8c41e2bb09bd22820428d61954","cf2ebed93442535d32679655ec16d6c5a29d9f86fafb59eaf07de4d719ae1302","5240b0ff2a96cec2680d35df88796279e6f3ed47f0e395252e9c3e4288e6c132"}.Contains(digest);
-        if(name=="StardiveMount.asi")return new[]{"2522cffba1afd791db4cc3479fcc630d781d6dc324d5e700046d2405a41bfa9d","90c2e279106d05c9af4de4f5eab952cb552a605a4fcddd5d9fdd1228cf71b94f","5ceff22c62ef0d60671a58490b1c1ba14aa923dec5d2a5c5cf9de992cdfdfc97","32390d0a4dd0429cebd2d08580f2a5d7138ea2a0586946b286221f5e8775fed8"}.Contains(digest);
-        if(name=="MSDCamera.asi")return new[]{"4e43735b4211828a56bb4c30978df8a66dab28eecfd2357bdc09a4ed4d9db019"}.Contains(digest);
+        if(name=="version.dll")return new[]{"b2190b2b3666027f00734876aba47e970d1d60fe63e8af17eaaedd739a4fec01","2f5460a75b673846a930529de4324dae0130591960f8ef839abdf2e73c6486f2","87445b6028e3ce4560f0002d52345852a56acca30169e19549dfb727931da868","559094e78013e6dda9e26cc8ee64a4166bf2fe8c41e2bb09bd22820428d61954","cf2ebed93442535d32679655ec16d6c5a29d9f86fafb59eaf07de4d719ae1302","5240b0ff2a96cec2680d35df88796279e6f3ed47f0e395252e9c3e4288e6c132"}.Contains(digest);
+        if(name=="StardiveMount.asi")return new[]{"0dc0425deb124080ea371dc14bae7bb9d0da7d830f9d6a700176488d4a909b7a","2522cffba1afd791db4cc3479fcc630d781d6dc324d5e700046d2405a41bfa9d","90c2e279106d05c9af4de4f5eab952cb552a605a4fcddd5d9fdd1228cf71b94f","5ceff22c62ef0d60671a58490b1c1ba14aa923dec5d2a5c5cf9de992cdfdfc97","32390d0a4dd0429cebd2d08580f2a5d7138ea2a0586946b286221f5e8775fed8"}.Contains(digest);
+        if(name=="MSDCamera.asi")return new[]{"47f2178c0fe6a531b60b0313cf34a936641139d563cec3238c7a127c059e616e","4e43735b4211828a56bb4c30978df8a66dab28eecfd2357bdc09a4ed4d9db019"}.Contains(digest);
         return false;
     }
     void Save() { settings.gameRoot=game.Text.Trim(); settings.officialLauncher=official.Text.Trim(); Directory.CreateDirectory(SettingsDir); File.WriteAllText(Path.Combine(SettingsDir,"settings.json"),Json.Serialize(settings)); }
