@@ -1,0 +1,19 @@
+LIBRARY version
+EXPORTS
+ GetFileVersionInfoA=Probe0
+ GetFileVersionInfoW=Probe1
+ GetFileVersionInfoExA=Probe2
+ GetFileVersionInfoExW=Probe3
+ GetFileVersionInfoSizeA=Probe4
+ GetFileVersionInfoSizeW=Probe5
+ GetFileVersionInfoSizeExA=Probe6
+ GetFileVersionInfoSizeExW=Probe7
+ VerFindFileA=Probe8
+ VerFindFileW=Probe9
+ VerInstallFileA=Probe10
+ VerInstallFileW=Probe11
+ VerLanguageNameA=Probe12
+ VerLanguageNameW=Probe13
+ VerQueryValueA=Probe14
+ VerQueryValueW=Probe15
+ GetFileVersionInfoByHandle=Probe16
