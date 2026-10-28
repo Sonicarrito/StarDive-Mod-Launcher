@@ -55,14 +55,34 @@ static class InstallDetection {
         }
         return result;
     }
-    public static string EpicLaunchUri(){
+    public static string EpicLaunchUri(string launcher){
+        using(var key=Registry.ClassesRoot.OpenSubKey(@"com.epicgames.launcher\shell\open\command")){
+            if(key==null||string.IsNullOrWhiteSpace(key.GetValue(null) as string))
+                throw new IOException("Epic Games Launcher is not registered for game launch requests. Open or repair the Epic Games Launcher, then try again.");
+        }
         string folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"Epic","EpicGamesLauncher","Data","Manifests");
-        if(Directory.Exists(folder))foreach(string file in Directory.GetFiles(folder,"*.item"))try{
-            var data=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(File.ReadAllText(file));object title,app,ns,item;
-            if(!data.TryGetValue("DisplayName",out title)||!(title is string)||((string)title).IndexOf("MONGIL",StringComparison.OrdinalIgnoreCase)<0)continue;
-            if(data.TryGetValue("AppName",out app)&&app is string&&data.TryGetValue("CatalogNamespace",out ns)&&ns is string&&data.TryGetValue("CatalogItemId",out item)&&item is string)
-                return "com.epicgames.launcher://apps/"+Uri.EscapeDataString((string)ns+":"+(string)item+":"+(string)app)+"?action=launch&silent=true";
-        }catch{}
-        throw new IOException("STAR DIVE's Epic installation record was not found. Install it through Epic Games first.");
+        return EpicLaunchUri(launcher,folder);
+    }
+    internal static string EpicLaunchUri(string launcher,string folder){
+        if(!LauncherValid(launcher)||!IsEpic(launcher))
+            throw new IOException("Select Netmarble Launcher_EPIC.exe for this Epic installation.");
+        string selected=Path.GetFullPath(launcher);
+        // Use a record only when its actual executable matches the selected launcher.
+        // Titles can be translated, and a different installation may have the same title.
+        try {
+            if(Directory.Exists(folder))foreach(string file in Directory.GetFiles(folder,"*.item"))try{
+                var data=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(File.ReadAllText(file));
+                string install=Field(data,"InstallLocation"),executable=Field(data,"LaunchExecutable");
+                if(install==""||executable==""||!string.Equals(Path.GetFullPath(Path.Combine(install,executable)),selected,StringComparison.OrdinalIgnoreCase))continue;
+                string app=Field(data,"AppName"),ns=Field(data,"CatalogNamespace"),item=Field(data,"CatalogItemId");
+                if(app!=""&&ns!=""&&item!="")return "com.epicgames.launcher://apps/"+Uri.EscapeDataString(ns+":"+item+":"+app)+"?action=launch&silent=true";
+            }catch{}
+        }catch(IOException){}catch(UnauthorizedAccessException){}
+        // Epic also accepts any path inside its installed app, including its launcher EXE.
+        // Let the registered Epic client locate the app using its own installation database.
+        return "com.epicgames.launcher://apps/"+Uri.EscapeDataString(selected.Replace('\\','/'))+"?action=launch&silent=true";
+    }
+    static string Field(Dictionary<string,object> data,string name){
+        object value;return data!=null&&data.TryGetValue(name,out value)&&value is string?((string)value).Trim():"";
     }
 }

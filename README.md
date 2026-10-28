@@ -1,6 +1,6 @@
 # Star Dive Mod Launcher
 
-Version **1.10.0** adds update-tolerant function discovery and BK2 movie replacements.
+Version **1.10.1** fixes Epic startup when the usual installation records are missing, while retaining update-tolerant function discovery and BK2 movie replacements.
 
 The launcher installs the native loader, starts the official Netmarble launcher, and manages the launcher session. It loads compatible `_P.pak` mods and their associated `.utoc` and `.ucas` files from `BigCat/Binaries/Win64/Mods`, including subfolders.
 
@@ -19,6 +19,8 @@ Earlier installations are recognized using SHA-256 hashes stored in the launcher
 For the launcher, run `dist/launcher/MongilModLauncher.exe` and select the game and official launcher paths if automatic detection does not find them. The EXE requests administrator access to install files in the game folder.
 
 The native loader requires an active mod-launcher session.
+
+For Epic installations, select `Netmarble Launcher_EPIC.exe`. Epic startup uses the registered Windows protocol handler, so Epic itself can be installed per-user or system-wide. An exact matching installation record is used when available; otherwise the selected Netmarble launcher path is passed to Epic using its supported launch-by-path protocol. The ProgramData manifest folder and an English game title are not required. Epic still needs to recognize the selected app as installed. See [Epic protocol activation documentation](https://assets-unreal2-epic-prod-us2.s3.dualstack.us-east-1.amazonaws.com/original/4X/f/c/4/fc4342c50e1a0abf34943e019ee90bacccc62950.pdf).
 
 The camera extension supports expanded pitch and closer zoom. Set `Enabled=0` in `MSDCamera.ini` to disable it.
 
@@ -41,6 +43,7 @@ Enabled replacements are copied into the downloaded movie cache after the conten
 Run `tests/build-tests.cmd` after building. It produces test executables under `build/tests`:
 
 - `compatibility.exe <game-executable> [older-game-executable]` maps the supplied files without running game code, verifies discovery and hook creation, and checks rejection of missing, duplicate and changed signatures/layouts. Changes are confined to the test process.
+- `EpicLaunchTests.exe <new-disposable-directory>` checks Epic launch requests with missing, malformed, localized and unrelated installation records and custom paths. It does not start Epic or the game.
 - `observers.exe` checks automatic loading triggers and preservation of the game's original return behavior.
 - `bk2.exe <new-disposable-directory>` exercises movie replacement, persistence, skip rules and locked-file handling using synthetic files.
 - `LauncherTests.exe <built-launcher-exe> <new-disposable-directory> <game-executable> [older-game-executable]` checks the embedded native probe, installation and settings inside a disposable fixture.

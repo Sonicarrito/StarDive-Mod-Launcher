@@ -82,7 +82,7 @@ class LauncherMenuColors : ProfessionalColorTable {
     public override Color MenuBorder {get{return Color.FromArgb(59,61,72);}}
 }
 class Launcher : Form {
-    const string AppVersion = "1.10.0";
+    const string AppVersion = "1.10.1";
     static readonly string Home = AppDomain.CurrentDomain.BaseDirectory;
     static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
     static readonly string SettingsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MongilModLauncher");
@@ -146,9 +146,9 @@ class Launcher : Form {
     static bool RecognizedModule(string name,byte[] bytes) {
         string digest=Digest(bytes);
         if(digest==Digest(Payload(name)))return true;
-        if(name=="version.dll")return new[]{"e74f7d190af7796ddfc3768578ae33262908c02c252582e37e742800865dfdcb","b2190b2b3666027f00734876aba47e970d1d60fe63e8af17eaaedd739a4fec01","2f5460a75b673846a930529de4324dae0130591960f8ef839abdf2e73c6486f2","87445b6028e3ce4560f0002d52345852a56acca30169e19549dfb727931da868","559094e78013e6dda9e26cc8ee64a4166bf2fe8c41e2bb09bd22820428d61954","cf2ebed93442535d32679655ec16d6c5a29d9f86fafb59eaf07de4d719ae1302","5240b0ff2a96cec2680d35df88796279e6f3ed47f0e395252e9c3e4288e6c132"}.Contains(digest);
-        if(name=="StardiveMount.asi")return new[]{"e88a63bf09929407b6078063ca3314a710ede7078b42d532611298a893ddb3ab","0dc0425deb124080ea371dc14bae7bb9d0da7d830f9d6a700176488d4a909b7a","2522cffba1afd791db4cc3479fcc630d781d6dc324d5e700046d2405a41bfa9d","90c2e279106d05c9af4de4f5eab952cb552a605a4fcddd5d9fdd1228cf71b94f","5ceff22c62ef0d60671a58490b1c1ba14aa923dec5d2a5c5cf9de992cdfdfc97","32390d0a4dd0429cebd2d08580f2a5d7138ea2a0586946b286221f5e8775fed8"}.Contains(digest);
-        if(name=="MSDCamera.asi")return new[]{"c81cad5e6d68b5c5ed0064a6d5c6033242b82adc67dbefda518f4244e95af553","47f2178c0fe6a531b60b0313cf34a936641139d563cec3238c7a127c059e616e","4e43735b4211828a56bb4c30978df8a66dab28eecfd2357bdc09a4ed4d9db019"}.Contains(digest);
+        if(name=="version.dll")return new[]{"3e75dbfde055666a7e97162e64be74397363dacaad45b266992fc788756b8678","e74f7d190af7796ddfc3768578ae33262908c02c252582e37e742800865dfdcb","b2190b2b3666027f00734876aba47e970d1d60fe63e8af17eaaedd739a4fec01","2f5460a75b673846a930529de4324dae0130591960f8ef839abdf2e73c6486f2","87445b6028e3ce4560f0002d52345852a56acca30169e19549dfb727931da868","559094e78013e6dda9e26cc8ee64a4166bf2fe8c41e2bb09bd22820428d61954","cf2ebed93442535d32679655ec16d6c5a29d9f86fafb59eaf07de4d719ae1302","5240b0ff2a96cec2680d35df88796279e6f3ed47f0e395252e9c3e4288e6c132"}.Contains(digest);
+        if(name=="StardiveMount.asi")return new[]{"721a0ff44e2c564451461448a13f8289a7b4be581b4137459fef00c6e3dc2d00","e88a63bf09929407b6078063ca3314a710ede7078b42d532611298a893ddb3ab","0dc0425deb124080ea371dc14bae7bb9d0da7d830f9d6a700176488d4a909b7a","2522cffba1afd791db4cc3479fcc630d781d6dc324d5e700046d2405a41bfa9d","90c2e279106d05c9af4de4f5eab952cb552a605a4fcddd5d9fdd1228cf71b94f","5ceff22c62ef0d60671a58490b1c1ba14aa923dec5d2a5c5cf9de992cdfdfc97","32390d0a4dd0429cebd2d08580f2a5d7138ea2a0586946b286221f5e8775fed8"}.Contains(digest);
+        if(name=="MSDCamera.asi")return new[]{"fd881506b0a8978940270031901650bdb32e9b6343c22e4ff12db1e4f98f54de","c81cad5e6d68b5c5ed0064a6d5c6033242b82adc67dbefda518f4244e95af553","47f2178c0fe6a531b60b0313cf34a936641139d563cec3238c7a127c059e616e","4e43735b4211828a56bb4c30978df8a66dab28eecfd2357bdc09a4ed4d9db019"}.Contains(digest);
         return false;
     }
     [UnmanagedFunctionPointer(CallingConvention.Winapi,CharSet=CharSet.Ansi)]
@@ -295,7 +295,7 @@ class Launcher : Form {
     async Task LaunchGame(){
         if(watching)return;
         try {if(!File.Exists(settings.officialLauncher)||!Directory.Exists(settings.gameRoot))OpenSettings();if(closing)return;Save();var paired=InstallDetection.FindFor(settings.gameRoot,settings.officialLauncher);if(!InstallDetection.LauncherValid(paired.officialLauncher))throw new IOException("Choose the official launcher that corresponds to this STAR DIVE installation.");official.Text=paired.officialLauncher;Save();Install();
-            if(InstallDetection.IsEpic(settings.officialLauncher))Process.Start(new ProcessStartInfo(InstallDetection.EpicLaunchUri()){UseShellExecute=true});
+            if(InstallDetection.IsEpic(settings.officialLauncher))Process.Start(new ProcessStartInfo(InstallDetection.EpicLaunchUri(settings.officialLauncher)){UseShellExecute=true});
             else Process.Start(new ProcessStartInfo(settings.officialLauncher,"--productcode=/Game/monster2 --buildcode=A --executedbyexternallauncher=true --hidden"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Minimized,WorkingDirectory=Path.GetDirectoryName(settings.officialLauncher)});
             await WatchGame();
         }catch(Exception e){StopSession();if(!Running())Guard(RemoveInstalledLoader);ShowFromTray();status.Text=e.Message;MessageBox.Show(e.Message,"Launcher");}
@@ -509,7 +509,7 @@ class Launcher : Form {
                 }return 0;
             }
             if(args.Length==2&&args[0]=="--detect-test"){var found=InstallDetection.Find();File.WriteAllText(args[1],Json.Serialize(found));return InstallDetection.GameValid(found.gameRoot)&&InstallDetection.LauncherValid(found.officialLauncher)?0:9;}
-            if(args.Length==2&&args[0]=="--detect-epic-test"){var found=InstallDetection.Find(true);File.WriteAllText(args[1],Json.Serialize(found)+Environment.NewLine+InstallDetection.EpicLaunchUri());return InstallDetection.GameValid(found.gameRoot)&&InstallDetection.LauncherValid(found.officialLauncher)?0:9;}
+            if(args.Length==2&&args[0]=="--detect-epic-test"){var found=InstallDetection.Find(true);File.WriteAllText(args[1],Json.Serialize(found)+Environment.NewLine+InstallDetection.EpicLaunchUri(found.officialLauncher));return InstallDetection.GameValid(found.gameRoot)&&InstallDetection.LauncherValid(found.officialLauncher)?0:9;}
             if(args.Length==3&&args[0]=="--session-test") { using(var gate=new LauncherSession(args[1]))using(var child=Process.Start(new ProcessStartInfo(args[1],"active "+"\""+args[2]+"\""){UseShellExecute=false,CreateNoWindow=true})){child.WaitForExit();return child.ExitCode;} }
             if(args.Length==1&&args[0]=="--self-test") {
                 if(Payload("version.dll").Length<1000||Payload("StardiveMount.asi").Length<1000||Payload("MSDCamera.asi").Length<1000)return 3;

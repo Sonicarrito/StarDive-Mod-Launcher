@@ -19,4 +19,6 @@ cl /nologo /O2 /MT /EHsc /std:c++17 ..\..\tests\bk2.cpp /Fe:bk2.exe
 if errorlevel 1 exit /b 1
 "%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /reference:System.Windows.Forms.dll /out:LauncherTests.exe ..\..\tests\LauncherTests.cs
 if errorlevel 1 exit /b 1
+"%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /reference:System.Web.Extensions.dll /out:EpicLaunchTests.exe ..\..\tests\EpicLaunchTests.cs ..\..\src\launcher\InstallDetection.cs
+if errorlevel 1 exit /b 1
 exit /b 0
