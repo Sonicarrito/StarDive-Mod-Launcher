@@ -1,6 +1,6 @@
 # Star Dive Mod Launcher
 
-Version **1.10.1** fixes Epic startup when the usual installation records are missing, while retaining update-tolerant function discovery and BK2 movie replacements.
+Version **1.10.2** fixes compatibility inspection of unrelocated game images, including Wine/Proton, while retaining Epic startup fixes, update-tolerant function discovery and BK2 movie replacements.
 
 The launcher installs the native loader, starts the official Netmarble launcher, and manages the launcher session. It loads compatible `_P.pak` mods and their associated `.utoc` and `.ucas` files from `BigCat/Binaries/Win64/Mods`, including subfolders.
 
@@ -26,6 +26,8 @@ The camera extension supports expanded pitch and closer zoom. Set `Enabled=0` in
 
 ## Game update compatibility
 
+The pre-launch inspector maps the executable as read-only image data and translates stored absolute pointers from the executable's preferred base. It neither executes game code nor depends on the platform loader relocating an inspection-only EXE. Runtime checks use the actual live image addresses.
+
 The launcher discovers the required game functions from instruction patterns and checks their related code and data. It no longer rejects a build simply because its executable hash or function addresses changed. Both the previous and October 26, 2026 game executables passed compatibility checks.
 
 This improves tolerance of routine rebuilds, but cannot guarantee support for every future update. Changed function behavior, layouts or movie locations may still require a loader update. Ambiguous or missing essential matches stop mod loading. If only automatic content-completion detection is unavailable, F8 remains available after the game's content check. Camera code and its reflected field layouts are verified separately; an incompatible camera feature does not disable PAK mods.
@@ -42,7 +44,7 @@ Enabled replacements are copied into the downloaded movie cache after the conten
 
 Run `tests/build-tests.cmd` after building. It produces test executables under `build/tests`:
 
-- `compatibility.exe <game-executable> [older-game-executable]` maps the supplied files without running game code, verifies discovery and hook creation, and checks rejection of missing, duplicate and changed signatures/layouts. Changes are confined to the test process.
+- `compatibility.exe <game-executable> [older-game-executable]` maps the supplied files without running game code, verifies discovery and hook creation, and checks rejection of missing, duplicate and changed signatures/layouts. It also forces an unrelocated resource mapping to a different base, reproduces the older Wine failure, and verifies the corrected pointer handling without weakening the method-table checks. Changes are confined to the test process.
 - `EpicLaunchTests.exe <new-disposable-directory>` checks Epic launch requests with missing, malformed, localized and unrelated installation records and custom paths. It does not start Epic or the game.
 - `observers.exe` checks automatic loading triggers and preservation of the game's original return behavior.
 - `bk2.exe <new-disposable-directory>` exercises movie replacement, persistence, skip rules and locked-file handling using synthetic files.

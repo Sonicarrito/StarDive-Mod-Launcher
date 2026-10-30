@@ -129,10 +129,13 @@ static bool VerifyBuild(unsigned char* base) {
 // Offline inspection only: map the game image without running its entry point.
 extern "C" __declspec(dllexport) DWORD WINAPI ProbeGameCompatibility(const wchar_t* file,char* message,DWORD capacity) {
     if(!file||!message||capacity<2)return 0;
-    HMODULE mapped=LoadLibraryExW(file,nullptr,DONT_RESOLVE_DLL_REFERENCES);
+    // Resource-only mapping neither executes game code nor relies on loader relocations.
+    HMODULE mapped=LoadLibraryExW(file,nullptr,LOAD_LIBRARY_AS_IMAGE_RESOURCE|LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE);
     if(!mapped){strcpy_s(message,capacity,"The game executable could not be mapped for inspection.");return 0;}
+    uintptr_t tag=reinterpret_cast<uintptr_t>(mapped)&3;
+    void* base=reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(mapped)&~uintptr_t(3));
     Compat::Image image;Compat::Layout found;DWORD flags=0;
-    if(Compat::OpenImage(image,mapped)) {
+    if((tag==0||tag==2)&&Compat::OpenImage(image,base,tag==2)) {
         if(Compat::Core(image,found,message,capacity)){flags|=1;if(found.Automatic())flags|=2;}
         if(Compat::Camera(image))flags|=4;
     }else strcpy_s(message,capacity,"The game executable is not a supported 64-bit image.");
@@ -192,7 +195,7 @@ static DWORD WINAPI Worker(void*) {
     const wchar_t* exeName=wcsrchr(exe,L'\\');exeName=exeName?exeName+1:exe;
     if(_wcsicmp(exeName,L"BigCat-Win64-Shipping.exe")) return 0;
     diagnosticStart=GetTickCount64();
-    Log("\r\nPLUGIN_STARTED: StardiveMount 1.10.0 pattern compatibility, launcher session required, recursive mods x64\r\n");
+    Log("\r\nPLUGIN_STARTED: StardiveMount 1.10.2 pattern compatibility, launcher session required, recursive mods x64\r\n");
     if(!LauncherSessionActive()){Log("LAUNCHER_SESSION_REQUIRED: start through Star Dive Mod Launcher; no hooks or mounts enabled.\r\n");return 0;}
     unsigned char* base=reinterpret_cast<unsigned char*>(GetModuleHandleW(nullptr));
     if(!VerifyBuild(base)) { Log("BUILD_REJECTED: required mod-loading functions could not be verified; no engine calls made.\r\n");return 0; }

@@ -10,6 +10,12 @@ namespace Compat {
 struct Span { unsigned char* p; size_t n; DWORD flags; };
 struct Image {
     unsigned char* base=nullptr; size_t size=0;
+    uintptr_t preferredBase=0; bool storedPointers=false;
+    // Resource mappings retain on-disk absolute pointers; live images use relocated pointers.
+    unsigned char* Pointer(uintptr_t value) const {
+        uintptr_t origin=storedPointers?preferredBase:reinterpret_cast<uintptr_t>(base);
+        return value>=origin && value-origin<size?base+(value-origin):nullptr;
+    }
     std::vector<Span> sections;
     const RUNTIME_FUNCTION* functions=nullptr; size_t functionCount=0;
     bool Range(const void* ptr,size_t n) const {
@@ -27,7 +33,7 @@ struct Image {
     bool Data(const void* p,size_t n=1) const {auto s=Section(p,n);return s&&(s->flags&IMAGE_SCN_MEM_READ)&&!(s->flags&IMAGE_SCN_MEM_EXECUTE);}
     bool ReadOnly(const void* p,size_t n=1) const {auto s=Section(p,n);return s&&(s->flags&IMAGE_SCN_MEM_READ)&&!(s->flags&(IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_WRITE));}
     bool Writable(const void* p,size_t n=1) const {auto s=Section(p,n);return s&&(s->flags&IMAGE_SCN_MEM_WRITE)&&!(s->flags&IMAGE_SCN_MEM_EXECUTE);}
-    bool Init(void* module) {
+    bool Init(void* module,bool stored=false) {
         base=static_cast<unsigned char*>(module);sections.clear();
         auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
         if(!base || dos->e_magic!=IMAGE_DOS_SIGNATURE || dos->e_lfanew<64 || dos->e_lfanew>0x800)return false;
@@ -36,7 +42,8 @@ struct Image {
            nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC || nt->FileHeader.NumberOfSections>96 ||
            nt->FileHeader.SizeOfOptionalHeader<sizeof(IMAGE_OPTIONAL_HEADER64))return false;
         size=nt->OptionalHeader.SizeOfImage;
-        if(size<0x1000 || size>0x40000000)return false;
+        preferredBase=static_cast<uintptr_t>(nt->OptionalHeader.ImageBase);storedPointers=stored;
+        if(size<0x1000 || size>0x40000000 || preferredBase>UINTPTR_MAX-size)return false;
         auto sh=IMAGE_FIRST_SECTION(nt);
         if(!Range(sh,size_t(nt->FileHeader.NumberOfSections)*sizeof(*sh)))return false;
         for(unsigned i=0;i<nt->FileHeader.NumberOfSections;++i) {
@@ -120,10 +127,10 @@ inline void ResolveStates(const Image& im,Layout& out) {
         if(!im.ReadOnly(span.p,span.n))continue;
         for(size_t i=0;i+16<=span.n;i+=8) {
             uintptr_t name=0;uint64_t value=0;memcpy(&name,span.p+i,8);memcpy(&value,span.p+i+8,8);
-            if(value || !Text(im,reinterpret_cast<void*>(name),"EM2PatchStatus::NONE"))continue;
+            if(value || !Text(im,im.Pointer(name),"EM2PatchStatus::NONE"))continue;
             Layout found;bool failed=false;unsigned count=0;
             for(size_t j=i;j+16<=span.n&&count<64;j+=16,++count) {
-                memcpy(&name,span.p+j,8);memcpy(&value,span.p+j+8,8);auto text=reinterpret_cast<const char*>(name);
+                memcpy(&name,span.p+j,8);memcpy(&value,span.p+j+8,8);auto text=reinterpret_cast<const char*>(im.Pointer(name));
                 if(!im.ReadOnly(text,prefixLength)||memcmp(text,prefix,prefixLength))break;
                 if(value>=255 || found.stateNames[value]){failed=true;break;}
                 unsigned len=0;for(;len<96;++len){if(!im.ReadOnly(text+len,1)){failed=true;break;}if(!text[len])break;}
@@ -167,12 +174,12 @@ inline bool ResolveCore(const Image& im,Layout& out,char* reason,size_t n) {
         size_t first=(sizeof(void*)-reinterpret_cast<uintptr_t>(s.p)%sizeof(void*))%sizeof(void*);
         for(size_t i=first+0x70;i+sizeof(void*)<=s.n;i+=sizeof(void*)) {
             uintptr_t ptr=0;memcpy(&ptr,s.p+i,sizeof(ptr));
-            if(ptr!=reinterpret_cast<uintptr_t>(out.name))continue;
+            if(im.Pointer(ptr)!=out.name)continue;
             auto vt=s.p+i-0x70;uintptr_t lower=0;memcpy(&lower,vt+0x60,sizeof(lower));
             const unsigned char getter[]={0x48,0x8b,0x41,0x08,0xc3};
-            if(im.ReadOnly(vt,0x90)&&im.Code(reinterpret_cast<void*>(lower),5)&&!memcmp(reinterpret_cast<void*>(lower),getter,5)){
+            if(im.ReadOnly(vt,0x90)&&im.Code(im.Pointer(lower),5)&&!memcmp(im.Pointer(lower),getter,5)){
                 bool codePointers=true;
-                for(unsigned j=0;j<0x90;j+=8){uintptr_t fn=0;memcpy(&fn,vt+j,8);if(!im.Code(reinterpret_cast<void*>(fn)))codePointers=false;}
+                for(unsigned j=0;j<0x90;j+=8){uintptr_t fn=0;memcpy(&fn,vt+j,8);if(!im.Code(im.Pointer(fn)))codePointers=false;}
                 if(codePointers){out.vtable=vt;++vtCount;}
             }
         }
@@ -183,9 +190,9 @@ inline bool ResolveCore(const Image& im,Layout& out,char* reason,size_t n) {
     return true;
 }
 inline const unsigned char* Descriptor(const Image& im,uintptr_t ptr) {
-    auto p=reinterpret_cast<const unsigned char*>(ptr);
+    auto p=im.Pointer(ptr);
     if(!im.ReadOnly(p,64))return nullptr;
-    uintptr_t name=0;memcpy(&name,p,8);auto text=reinterpret_cast<const char*>(name);
+    uintptr_t name=0;memcpy(&name,p,8);auto text=reinterpret_cast<const char*>(im.Pointer(name));
     if(!im.ReadOnly(text,1))return nullptr;
     unsigned len=0;for(;len<80;++len){if(!im.ReadOnly(text+len,1))return nullptr;if(!text[len])break;if((unsigned char)text[len]<32||(unsigned char)text[len]>126)return nullptr;}
     if(!len||len==80)return nullptr;
@@ -200,21 +207,21 @@ inline bool CameraFields(const Image& im) {
         for(size_t i=0;i+64<=s.n;i+=8) {
             auto d=s.p+i;uintptr_t name=0;memcpy(&name,d,8);
             uint32_t gen=0;uint16_t off=0;memcpy(&gen,d+24,4);memcpy(&off,d+50,2);
-            if(gen==0xa&&off==0xb80&&Text(im,reinterpret_cast<void*>(name),"pitchMaxLimit"))candidates.push_back(reinterpret_cast<uintptr_t>(d));
+            if(gen==0xa&&off==0xb80&&Text(im,im.Pointer(name),"pitchMaxLimit"))candidates.push_back(reinterpret_cast<uintptr_t>(d));
         }
     }
     unsigned valid=0;
     for(auto desc:candidates)for(auto& s:im.sections) {
         if(!im.ReadOnly(s.p,s.n))continue;
         for(size_t i=0;i+8<=s.n;i+=8) {
-            uintptr_t ptr=0;memcpy(&ptr,s.p+i,8);if(ptr!=desc)continue;
+            uintptr_t ptr=0;memcpy(&ptr,s.p+i,8);if(im.Pointer(ptr)!=reinterpret_cast<unsigned char*>(desc))continue;
             size_t begin=i,back=0;
             while(begin>=8&&back<128){memcpy(&ptr,s.p+begin-8,8);if(!Descriptor(im,ptr))break;begin-=8;++back;}
             if(back==128)continue;
             bool pitchMax=false,pitchMin=false,distance=false,fade=false;
             for(size_t j=begin,count=0;j+8<=s.n&&count<128;j+=8,++count) {
                 memcpy(&ptr,s.p+j,8);auto d=Descriptor(im,ptr);if(!d)break;
-                uintptr_t np=0;memcpy(&np,d,8);auto name=reinterpret_cast<const char*>(np);
+                uintptr_t np=0;memcpy(&np,d,8);auto name=reinterpret_cast<const char*>(im.Pointer(np));
                 uint32_t gen=0;uint16_t off=0;memcpy(&gen,d+24,4);memcpy(&off,d+50,2);
                 if(gen==0xa&&off==0xb80&&Text(im,name,"pitchMaxLimit"))pitchMax=true;
                 if(gen==0xa&&off==0xb84&&Text(im,name,"pitchMinLimit"))pitchMin=true;
@@ -222,7 +229,7 @@ inline bool CameraFields(const Image& im) {
                 if(gen==0x4c&&Text(im,name,"useDistanceFade")) {
                     uintptr_t set=0;memcpy(&set,d+56,8);
                     const unsigned char expected[]={0xc6,0x81,0xa4,0x0b,0,0,1,0xc3};
-                    fade=im.Code(reinterpret_cast<void*>(set),8)&&!memcmp(reinterpret_cast<void*>(set),expected,8);
+                    fade=im.Code(im.Pointer(set),8)&&!memcmp(im.Pointer(set),expected,8);
                 }
             }
             if(pitchMax&&pitchMin&&distance&&fade)++valid;
@@ -234,9 +241,9 @@ inline unsigned char* ResolveCamera(const Image& im) {
     auto p=UniqueCode(im,CameraInputPattern);
     return p&&CameraFields(im)?p:nullptr;
 }
-inline bool OpenImage(Image& im,void* module) {
+inline bool OpenImage(Image& im,void* module,bool storedPointers=false) {
     // Keep SEH outside functions with C++ objects that require unwinding.
-    __try {return im.Init(module);}__except(EXCEPTION_EXECUTE_HANDLER){return false;}
+    __try {return im.Init(module,storedPointers);}__except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
 inline bool Core(Image& im,Layout& out,char* reason,size_t n) {
     __try{return ResolveCore(im,out,reason,n);}__except(EXCEPTION_EXECUTE_HANDLER){strcpy_s(reason,n,"Executable image could not be read safely.");return false;}

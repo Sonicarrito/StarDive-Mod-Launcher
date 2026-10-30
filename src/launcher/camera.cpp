@@ -33,7 +33,7 @@ static void __fastcall OnInput(void* self,unsigned char axis,bool valueType,floa
  originalInput(self,axis,valueType,value);
 }
 static DWORD WINAPI Initialize(void*){
- Log("\r\nMSD camera 1.10.0 pattern compatibility: starting.\r\n");
+ Log("\r\nMSD camera 1.10.2 pattern compatibility: starting.\r\n");
  wchar_t ini[32768];swprintf_s(ini,L"%sMSDCamera.ini",folder);
  if(!GetPrivateProfileIntW(L"Camera",L"Enabled",1,ini)){Log("DISABLED: configuration.\r\n");return 0;}
  angle=(float)GetPrivateProfileIntW(L"Camera",L"TiltDegrees",90,ini);
